@@ -1,0 +1,72 @@
+name: Build Kernel with KernelSU
+
+on:
+  workflow_dispatch:
+    inputs:
+      kernel_source:
+        description: 'Enter the URL of the Kernel source'
+        required: true
+        default: 'https://github.com/your-kernel-repo/kernel-source'
+      clang_source:
+        description: 'Enter the URL of the Clang source'
+        required: true
+        default: 'https://your-clang-source-url/clang-toolchain.tar.gz'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+    # Checkout the repository
+    - name: Checkout KernelSU repository
+      uses: actions/checkout@v3
+
+    # Ask user for kernel source and clang source
+    - name: Set up build environment
+      run: |
+        # Accept inputs from the GitHub Action trigger
+        KERNEL_SOURCE="${{ github.event.inputs.kernel_source }}"
+        CLANG_SOURCE="${{ github.event.inputs.clang_source }}"
+
+        echo "Kernel source: $KERNEL_SOURCE"
+        echo "Clang source: $CLANG_SOURCE"
+
+        # Install necessary dependencies
+        sudo apt update
+        sudo apt install -y git build-essential bc libncurses5-dev bison flex libssl-dev curl cpio
+
+    # Download kernel source
+    - name: Download Kernel source
+      run: |
+        git clone $KERNEL_SOURCE kernel-source
+        cd kernel-source
+        git checkout main # You can customize the branch name if needed
+
+    # Download Clang toolchain
+    - name: Download Clang toolchain
+      run: |
+        wget $CLANG_SOURCE -O clang-toolchain.tar.gz
+        tar -xvzf clang-toolchain.tar.gz -C /usr/local/
+
+    # Set up environment for Clang
+    - name: Set up Clang toolchain
+      run: |
+        export PATH=/usr/local/clang-toolchain/bin:$PATH
+        export CC=/usr/local/clang-toolchain/bin/clang
+        export CROSS_COMPILE=aarch64-linux-gnu-
+
+    # Build Kernel with KernelSU
+    - name: Build Kernel with KernelSU
+      run: |
+        cd kernel-source
+        export ARCH=arm64
+        export SUBARCH=arm64
+        make a22x_defconfig
+        make -j$(nproc)
+
+    # Upload artifacts
+    - name: Upload built kernel
+      uses: actions/upload-artifact@v3
+      with:
+        name: kernel-build
+        path: kernel-source/arch/arm64/boot/Image.gz-dtb
